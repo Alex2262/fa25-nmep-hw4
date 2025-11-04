@@ -37,8 +37,8 @@ class Transformer(nn.Module):
             vocab_size,
             num_layers,
             num_heads,
-            ffn_hidden_dim,
             embedding_dim,
+            ffn_hidden_dim,
             qk_length,
             value_length,
             max_length,
@@ -49,8 +49,8 @@ class Transformer(nn.Module):
             vocab_size,
             num_layers,
             num_heads,
-            ffn_hidden_dim,
             embedding_dim,
+            ffn_hidden_dim,
             qk_length,
             value_length,
             max_length,
@@ -59,7 +59,7 @@ class Transformer(nn.Module):
 
     def make_pad_mask(self, q: torch.Tensor, k: torch.Tensor):
         pad_mask = k.eq(self.pad_idx).unsqueeze(1).unsqueeze(1)
-        return pad_mask
+        return pad_mask.to(self.device)
 
     def make_causal_mask(self, q: torch.Tensor, k: torch.Tensor):
         len_q, len_k = q.size(1), k.size(1)
@@ -69,6 +69,10 @@ class Transformer(nn.Module):
         return mask
 
     def forward(self, src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
+        # print("STARTING")
+
+        # print(src.size())
+
         src_mask = self.make_pad_mask(src, src)
         src_tgt_mask = self.make_pad_mask(tgt, src)
 
@@ -77,6 +81,15 @@ class Transformer(nn.Module):
 
         tgt_mask = tgt_pad_mask | tgt_causal_mask
 
+
+        # print("ENCODER")
+        # print(src.size())
         enc_src = self.encoder(src, src_mask)
+        # print(src.size())
+        # print(enc_src.size())
+        # print("DECODER")
         output = self.decoder(tgt, enc_src, tgt_mask, src_tgt_mask)
+        # print(output.size(), src.size())
+        # print("DONE")
+
         return output

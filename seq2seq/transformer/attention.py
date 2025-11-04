@@ -33,9 +33,13 @@ class MultiHeadAttention(nn.Module):
         self.qk_length = qk_length
         self.value_length = value_length
 
-        # Define any layers you'll need in the forward pass
-        # (hint: number of Linear layers needed != 3)
-        raise NotImplementedError("Need to implement MHA layers")
+        qk_dim = num_heads * qk_length
+        v_dim = num_heads * value_length
+
+        self.weights_q = nn.Linear(embedding_dim, qk_dim)
+        self.weights_k = nn.Linear(embedding_dim, qk_dim)
+        self.weights_v = nn.Linear(embedding_dim, v_dim)
+        self.weights_o = nn.Linear(v_dim, embedding_dim)
 
     def split_heads(self, x: torch.Tensor, vec_length: int) -> torch.Tensor:
         """
@@ -53,11 +57,18 @@ class MultiHeadAttention(nn.Module):
         """
         B, T, C = x.size()
 
+        # print("SPLIT HEADS:", x.size(), self.num_heads, vec_length)
+
         assert C // self.num_heads == vec_length, (
             "Input tensor does not have the correct shape for splitting."
         )
 
-        raise NotImplementedError("Need to implement split_heads")
+        reshaped = x.view(B, T, self.num_heads, vec_length)
+        reshaped = torch.permute(reshaped, (0, 2, 1, 3))
+
+        assert(reshaped.size() == (B, self.num_heads, T, vec_length))
+
+        return reshaped
 
     def combine_heads(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -71,9 +82,17 @@ class MultiHeadAttention(nn.Module):
         Returns:
             torch.Tensor of shape (B, T, num_heads * vec_length)
         """
+
+        # print("COMBINE HEADS INP:", x.shape)
+
         B, num_heads, T, vec_length = x.size()
 
-        raise NotImplementedError("Need to implement combine_heads")
+        x = torch.permute(x, (0, 2, 1, 3)).contiguous()
+        y = x.view(B, T, num_heads * vec_length)
+
+        assert(y.size() == (B, T, num_heads * vec_length))
+
+        return y
 
     def scaled_dot_product_attention(
         self,
@@ -92,7 +111,22 @@ class MultiHeadAttention(nn.Module):
             V: torch.Tensor of shape (B, num_heads, T, value_length)
             mask: Optional boolean torch.Tensor, broadcastable to (B, num_heads, T, T).
         """
-        raise NotImplementedError("Need to implement scaled_dot_product_attention")
+
+        B, num_heads, T, qk_length = Q.size()
+
+        inner = Q @ torch.transpose(K, -2, -1) / (self.qk_length ** 0.5)
+        if mask is not None:
+            inner = inner.masked_fill(mask == 1, float('-inf'))
+
+        # print("INNER SHAPE", inner.shape)
+
+        out = torch.softmax(inner, dim=3) @ V
+
+        # print("OUT SHAPE", out.shape)
+
+        assert(out.size() == (B, num_heads, T, self.value_length))
+
+        return out
 
     def forward(
         self,
@@ -113,7 +147,26 @@ class MultiHeadAttention(nn.Module):
         Returns:
             torch.Tensor of shape (B, T, C)
         """
-        raise NotImplementedError("Need to implement forward pass of MHA")
+
+        B, T, C = Q.size()
+
+        Qs = self.weights_q(Q)
+        Ks = self.weights_k(K)
+        Vs = self.weights_v(V)
+
+        Qh = self.split_heads(Qs, self.qk_length)
+        Kh = self.split_heads(Ks, self.qk_length)
+        Vh = self.split_heads(Vs, self.value_length)
+
+        out = self.scaled_dot_product_attention(Qh, Kh, Vh, mask)
+
+        out = self.combine_heads(out)
+
+        out = self.weights_o(out)
+
+        assert(out.size() == (B, T, C))
+
+        return out
 
 
 
@@ -136,10 +189,17 @@ class FeedForwardNN(nn.Module):
         self.embedding_dim = embedding_dim
 
         # Define any layers you'll need in the forward pass
-        raise NotImplementedError("Need to implement FeedForwardNN layers")
+        self.l1 = nn.Linear(embedding_dim, hidden_dim)
+        self.act = nn.GELU()
+        self.l2 = nn.Linear(hidden_dim, embedding_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         The forward pass of the FeedForwardNN.
         """
-        raise NotImplementedError("Need to implement forward pass of FeedForwardNN")
+
+        x = self.l1(x)
+        x = self.act(x)
+        x = self.l2(x)
+
+        return x

@@ -12,7 +12,7 @@ from seq2seq.transformer.transformer import Transformer
 from seq2seq.data.fr_en import FrEnDataset, collate_fn, tokenizer
 
 run = wandb.init(
-    entity="<INSERT ENTITY HERE>",
+    entity="alexander-tian-ucb",
     project="transformer",
     config={
         "learning_rate": 0.00005,
@@ -23,7 +23,7 @@ run = wandb.init(
 )
 
 
-def decode(model, src_sentence, max_len=100, device="cpu"):
+def decode(model, src_sentence, max_len, device):
     model.eval()
     src_tensor = tokenizer.encode(src_sentence).to(device)
 
@@ -61,11 +61,11 @@ def save_checkpoint(epoch: int, model, optimizer, scheduler, latest=True):
 
 
 def train_nmt():
+    device = torch.device("cuda:0")
+
     data_path = Path("data/nmt/europarl/")
     dataset = FrEnDataset(data_path)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=collate_fn)
-
-    device = 1
 
     vocab_size = len(tokenizer.vocab)
     num_layers = 6
@@ -103,8 +103,7 @@ def train_nmt():
         device=device,
     ).to(device)
 
-    # TODO: loss shouldn't include pad tokens, so it should ignore pad token ids
-    criterion = nn.CrossEntropyLoss(ignore_index=...)
+    criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
     optimizer = optim.AdamW(model.parameters(), lr=base_lr, betas=[0.9, 0.98], eps=1e-9)
     scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
 
@@ -115,17 +114,24 @@ def train_nmt():
         data_tqdm = tqdm(dataloader)
         for i, (src, tgt) in enumerate(data_tqdm):
             try:
-                src, tgt = src.to(device), tgt.to(device)
+                src, tgt = src.to(device).long(), tgt.to(device).long()
+
+                if src.size()[1] > max_length:
+                    src = src[:,:max_length]
+
+                if tgt.size()[1] > max_length:
+                    tgt = tgt[:,:max_length]
 
                 tgt_input = tgt[:, :-1]
 
-                # TODO: if the input is up to the second-last token,
                 # what should the output be?
-                tgt_output = ...
+                tgt_output = tgt[:, 1:]
 
                 optimizer.zero_grad()
 
                 output = model(src, tgt_input)
+
+                # print(src.size(), tgt.size(), tgt_output.size(), output.size())
 
                 loss = criterion(output.reshape(-1, vocab_size), tgt_output.reshape(-1))
                 loss.backward()
@@ -139,7 +145,7 @@ def train_nmt():
                 print(e)
                 continue
 
-            if i % 1000 == 0:
+            if i % 1000 == 0 and i > 0:
                 print("Saving checkpoint...")
                 save_checkpoint(epoch, model, optimizer, scheduler)
 

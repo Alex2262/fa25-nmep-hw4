@@ -12,7 +12,7 @@ from seq2seq.transformer.transformer import Decoder
 from seq2seq.data.screenplay import ScreenplayDataset, collate_fn, tokenizer
 
 run = wandb.init(
-    entity="<INSERT ENTITY HERE>",
+    entity="alexander-tian-ucb",
     project="transformer",
     config={
         "learning_rate": 0.00005,
@@ -115,7 +115,7 @@ def train_lm():
     ).to(device)
 
     # TODO: loss shouldn't include pad tokens, so it should ignore pad token ids
-    criterion = nn.CrossEntropyLoss(ignore_index=...)
+    criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
     optimizer = optim.AdamW(model.parameters(), lr=base_lr, betas=[0.9, 0.98], eps=1e-9)
     scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
 
@@ -128,18 +128,26 @@ def train_lm():
             try:
                 paragraph = paragraph.to(device)
 
+                if paragraph.size()[1] > max_length:
+                    paragraph = paragraph[:, :max_length]
+
                 para_input = paragraph[:, :-1]
-                para_output = ...  # TODO: copy/modify the line from train_nmt.py
+                para_output = paragraph[:, 1:]  # TODO: copy/modify the line from train_nmt.py
+
+                # print("WHAT")
 
                 optimizer.zero_grad()
 
+                # print("WHAT")
                 trg_pad_mask = make_pad_mask(para_input, para_input)
                 trg_no_peak_mask = make_no_peak_mask(para_input, para_input)
 
+                # print("WHAT")
                 trg_mask = trg_pad_mask | trg_no_peak_mask
 
                 output = model(para_input, tgt_mask=trg_mask)
 
+                # print("WHAT")
                 loss = criterion(
                     output.reshape(-1, vocab_size), para_output.reshape(-1)
                 )
